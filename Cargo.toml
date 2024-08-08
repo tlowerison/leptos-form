@@ -23,7 +23,7 @@ bigdecimal = "0.4"
 chrono = { version = "0.4", features = ["std"] }
 convert_case = "0.6"
 darling = "0.20"
-derive_more = "0.99"
+derive_more = "1.0"
 derivative = "2.2"
 indexmap = "2.2"
 inner = "0.1"
