@@ -44,6 +44,8 @@ tracing = "0.1"
 thiserror = "1.0"
 typed-builder = "0.19"
 uuid = { version = "1.7", features = ["serde"] }
+ulid = { version = "1.1", features = [ "serde" ] }
+
 wasm-bindgen = "0.2"
 web-sys = "0.3"
 
