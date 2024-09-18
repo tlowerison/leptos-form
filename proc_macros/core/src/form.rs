@@ -37,6 +37,9 @@ struct FormOpts {
     vis: syn::Visibility,
     ident: syn::Ident,
     data: darling::ast::Data<(), SpannedValue<FormField>>,
+
+    #[darling(default)]
+    i18n: Option<I18nStructOptions>,
 }
 
 impl FormOpts {
@@ -158,6 +161,7 @@ enum FieldLabel {
         class: Option<StringExpr>,
         style: Option<StringExpr>,
         value: Option<syn::LitStr>,
+        i18n: Option<I18nFieldOptions>,
     },
     #[darling(rename = "default")]
     #[default]
@@ -170,6 +174,7 @@ enum FieldLabel {
         class: Option<StringExpr>,
         style: Option<StringExpr>,
         value: Option<syn::LitStr>,
+        i18n: Option<I18nFieldOptions>,
     },
 }
 
@@ -219,6 +224,52 @@ struct Cache {
 #[derive(Clone, Debug)]
 struct CacheValue(syn::Expr);
 
+#[derive(Clone, Debug, FromMeta)]
+struct I18nStructOptions {
+    #[darling(default)]
+    path: Option<syn::Path>,
+}
+
+#[derive(Debug, FromMeta)]
+pub(crate) struct I18nFieldOptions {
+    #[darling(default)]
+    pub(crate) skip: Option<bool>,
+    #[darling(default)]
+    pub(crate) key: Option<I18nKey>,
+}
+
+impl I18nFieldOptions {
+    pub(crate) fn is_skipped(&self) -> bool {
+        self.skip.is_some_and(|v| v)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct I18nKey(proc_macro2::TokenStream);
+
+impl ToTokens for I18nKey {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        self.0.to_tokens(tokens)
+    }
+}
+
+// This is needed to parse `i18n(key = path.to.translations)`, `syn::Punctuated` does implement `FromMeta` but only if the input is a string.
+// We could have `i18n(key = "path.to.translations")` and call it a day, but I prefer without quotes.
+impl FromMeta for I18nKey {
+    fn from_meta(item: &syn::Meta) -> darling::Result<Self> {
+        let res: darling::Result<Self> = match item {
+            syn::Meta::NameValue(syn::MetaNameValue { value, .. }) => {
+                Ok(I18nKey(value.to_token_stream()))
+            }
+            _ => Err(darling::Error::custom(
+                "Providing the i18n key only support the i18n(key = path.to.translations) form, i18n(key) and i18n(key(.., ..)) are not supported.",
+            )),
+        };
+        res.map_err(|e| e.with_span(item))
+    }
+}
+
+
 pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let ast: syn::DeriveInput = parse2(tokens)?;
 
@@ -237,6 +288,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         label: form_label,
         vis,
         wrapper,
+        i18n,
     } = form_opts;
 
     let error_ident = format_ident!("error");
@@ -1123,10 +1175,10 @@ fn wrap_field(
     let error_view = quote!({#error_view_ident});
     let field = spanned.deref();
     let field_label = field.label.as_ref().unwrap_or(&FieldLabel::Default);
-    let (container, id, class, rename_all, style, value) = match (field_label, form_label) {
+    let (container, id, class, rename_all, style, value, i18n) = match (field_label, form_label) {
         (FieldLabel::None, _) => return Ok(quote!(#field_view #error_view)),
         (FieldLabel::Default, FormLabel::None) => return Ok(quote!(#field_view #error_view)),
-        (FieldLabel::Default, FormLabel::Default) => (None, None, None, None, None, None),
+        (FieldLabel::Default, FormLabel::Default) => (None, None, None, None, None, None, None),
         (
             FieldLabel::Default,
             FormLabel::Adjacent {
@@ -1143,6 +1195,7 @@ fn wrap_field(
             rename_all.as_ref(),
             style.as_ref(),
             None,
+            None,
         ),
         (
             FieldLabel::Default,
@@ -1159,6 +1212,7 @@ fn wrap_field(
             rename_all.as_ref(),
             style.as_ref(),
             None,
+            None,
         ),
         (
             FieldLabel::Adjacent {
@@ -1167,6 +1221,7 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n,
             },
             FormLabel::Adjacent {
                 container: container_form,
@@ -1182,6 +1237,7 @@ fn wrap_field(
             if value.is_none() { rename_all.as_ref() } else { None },
             style.as_ref().or(style_form.as_ref()),
             value.as_ref(),
+            i18n.as_ref(),
         ),
         (
             FieldLabel::Adjacent {
@@ -1190,6 +1246,7 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n,
             },
             FormLabel::Wrap {
                 id: id_form,
@@ -1204,6 +1261,7 @@ fn wrap_field(
             if value.is_none() { rename_all.as_ref() } else { None },
             style.as_ref().or(style_form.as_ref()),
             value.as_ref(),
+            i18n.as_ref()
         ),
         (
             FieldLabel::Adjacent {
@@ -1212,6 +1270,7 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n,
             },
             FormLabel::Default,
         )
@@ -1222,6 +1281,7 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n,
             },
             FormLabel::None,
         ) => (
@@ -1231,6 +1291,7 @@ fn wrap_field(
             None,
             style.as_ref(),
             value.as_ref(),
+            i18n.as_ref(),
         ),
         (
             FieldLabel::Wrap {
@@ -1238,6 +1299,7 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n,
             },
             FormLabel::Adjacent {
                 id: id_form,
@@ -1259,6 +1321,7 @@ fn wrap_field(
             if value.is_none() { rename_all.as_ref() } else { None },
             style.as_ref().or(style_form.as_ref()),
             value.as_ref(),
+            i18n.as_ref(),
         ),
         (
             FieldLabel::Wrap {
@@ -1266,6 +1329,7 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n,
             },
             FormLabel::Default,
         )
@@ -1275,9 +1339,10 @@ fn wrap_field(
                 class,
                 style,
                 value,
+                i18n
             },
             FormLabel::None,
-        ) => (None, id.as_ref(), class.as_ref(), None, style.as_ref(), value.as_ref()),
+        ) => (None, id.as_ref(), class.as_ref(), None, style.as_ref(), value.as_ref(), i18n.as_ref()),
     };
 
     let label_id = id.into_iter();
