@@ -15,3 +15,6 @@ leptos_form_proc_macros_core.workspace = true
 
 [lib]
 proc-macro = true
+
+[features]
+i18n = ["leptos_form_proc_macros_core/i18n"]

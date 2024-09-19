@@ -230,22 +230,22 @@ struct I18nStructOptions {
     path: Option<syn::Path>,
 }
 
-#[derive(Debug, FromMeta)]
-pub(crate) struct I18nFieldOptions {
+#[derive(Clone, Debug, FromMeta)]
+struct I18nFieldOptions {
     #[darling(default)]
-    pub(crate) skip: Option<bool>,
+    skip: Option<bool>,
     #[darling(default)]
-    pub(crate) key: Option<I18nKey>,
+    key: Option<I18nKey>,
 }
 
 impl I18nFieldOptions {
-    pub(crate) fn is_skipped(&self) -> bool {
+    fn is_skipped(&self) -> bool {
         self.skip.is_some_and(|v| v)
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct I18nKey(proc_macro2::TokenStream);
+#[derive(Debug, Clone)]
+struct I18nKey(proc_macro2::TokenStream);
 
 impl ToTokens for I18nKey {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
@@ -307,6 +307,20 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         Some(format_ident!("island"))
     } else {
         None
+    };
+
+    let i18n_path = i18n
+        .as_ref()
+        .and_then(|i18n| i18n.path.as_ref())
+        .map(ToTokens::to_token_stream)
+        .unwrap_or_else(|| quote!(crate::i18n));
+
+    let i18n = if cfg!(feature = "i18n") {
+        quote! {
+            let _i18n = #i18n_path::use_i18n();
+        }
+    } else {
+        quote! {}
     };
 
     let krate = std::env::var("CARGO_PKG_NAME").unwrap();
@@ -487,6 +501,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 &field_id_idents[i],
                 &field_view_idents[i],
                 &error_view_idents[i],
+                &i18n_path,
             )
         })
         .collect::<Result<Vec<_>, Error>>()?;
@@ -1104,6 +1119,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                 #(#build_props)*
 
+                #i18n
+
                 #leptos_krate::view! {
                     #rendered_fields
                 }
@@ -1170,6 +1187,7 @@ fn wrap_field(
     field_id_ident: &syn::Ident,
     field_view_ident: &syn::Ident,
     error_view_ident: &syn::Ident,
+    i18n_path:  &TokenStream,
 ) -> Result<TokenStream, Error> {
     let field_view = quote!({#field_view_ident});
     let error_view = quote!({#error_view_ident});
@@ -1349,18 +1367,38 @@ fn wrap_field(
     let label_class = class.into_iter();
     let label_style = style.into_iter();
 
-    let label = match value {
-        Some(value) => value.value(),
-        None => {
-            let field_ax = field
-                .ident
-                .as_ref()
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| i.to_string());
-            match rename_all {
-                Some(label_case) => field_ax.to_case(Case::from(*label_case)),
-                None => field_ax,
+    let label = {
+        // if feature i18n is enabled and the i18n is set and not skipped then use the i18n translation
+        if cfg!(feature = "i18n") && !i18n.is_some_and(I18nFieldOptions::is_skipped) {
+            match i18n.and_then(|i18n| i18n.key.as_ref()) {
+                Some(key_path) => {
+                    quote!({ #i18n_path::t!(_i18n, #key_path)})
+                }
+                None => {
+                    let field_ax = field
+                        .ident
+                        .as_ref()
+                        .map(|x| x).unwrap();
+                    quote! { { #i18n_path::t!(_i18n, #field_ax)} }
+                }
             }
+
+        } else {
+            let string_label = match value {
+                Some(value) => value.value(),
+                None => {
+                    let field_ax = field
+                        .ident
+                        .as_ref()
+                        .map(|x| x.to_string())
+                        .unwrap_or_else(|| i.to_string());
+                    match rename_all {
+                        Some(label_case) => field_ax.to_case(Case::from(*label_case)),
+                        None => field_ax,
+                    }
+                }
+            };
+            quote! { #string_label }
         }
     };
 
@@ -2012,6 +2050,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn tuple_component_unnamed_is_rejected() {
         let expected_err_msg = r#"deriving Form for a tuple struct with `component` specified additionally requires a component name, consider using `component(name = "MyFormData_")`; note that "MyFormData" cannot be used as the component name because MyFormData is already an item defined in the function namespace and "_MyFormData" should not be used because of leptos name transformations"#;
 
@@ -2027,6 +2066,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn tuple_component_same_name_is_rejected() {
         let expected_err_msg = r#"deriving Form for a tuple struct with `component` specified additionally requires a component name, consider using `component(name = "MyFormData_")`; note that "MyFormData" cannot be used as the component name because MyFormData is already an item defined in the function namespace and "_MyFormData" should not be used because of leptos name transformations"#;
 
@@ -2042,6 +2082,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn tuple_component_same_name_preceded_with_underscore_is_rejected() {
         let expected_err_msg = r#"deriving Form for a tuple struct with `component` specified additionally requires a component name, consider using `component(name = "MyFormData_")`; note that "MyFormData" cannot be used as the component name because MyFormData is already an item defined in the function namespace and "_MyFormData" should not be used because of leptos name transformations"#;
 
@@ -2057,6 +2098,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn tuple_component_name_valid() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
@@ -2106,6 +2148,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn basic_form_comparison_check() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
@@ -2419,6 +2462,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn both_form_and_field_level_class_and_labels_work() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
@@ -2649,6 +2693,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn component_is_produced_correctly() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
@@ -2849,6 +2894,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn island_is_produced_correctly() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
@@ -3137,6 +3183,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature = "i18n", ignore)]
     fn custom_config_is_correctly_provided() -> Result<(), Error> {
         let leptos_form_krate = quote!(::leptos_form);
         let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
@@ -3330,6 +3377,207 @@ mod test {
                         < Form action = "/api/my-form-data" > { top.map(| x | (x.0)()) } { move ||
                         #leptos_krate::view! { < FormField props =signal.get() ty
                         = ty / > } } { bottom.map(| x | (x.0) ()) } < / Form >
+                    }
+                }
+            }
+        );
+
+        let output = derive_form(input)?;
+
+        let expected = cleanup(&expected);
+        let output = cleanup(&output);
+
+        let expected = pretty(expected)?;
+        let output = pretty(output)?;
+
+        assert_eq!(expected, output);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "i18n"), ignore)]
+    fn component_with_i18n_is_produced_correctly() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/my-form-data"))]
+            pub struct MyFormData {
+                pub ayo: u8,
+            }
+        );
+
+        let leptos_form_krate = quote!(::leptos_form);
+        let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
+        let leptos_router_krate = quote!(#leptos_form_krate::internal::leptos_router);
+
+        let expected = quote!(
+            #[derive(Clone, Copy, Debug)]
+            pub struct __MyFormDataSignal {
+                pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
+            }
+
+            #[derive(Clone, Debug)]
+            pub struct __MyFormDataConfig {
+                pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl Default for __MyFormDataConfig {
+                fn default() -> Self {
+                    Self {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    }
+                }
+            }
+
+            impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
+                fn as_ref(&self) -> &Self {
+                    self
+                }
+            }
+
+            impl ::core::convert::AsMut<__MyFormDataSignal> for __MyFormDataSignal {
+                fn as_mut(&mut self) -> &mut Self {
+                    self
+                }
+            }
+
+            impl #leptos_form_krate::DefaultHtmlElement for MyFormData {
+                type El = #leptos_krate::View;
+            }
+
+            impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
+                type Config = __MyFormDataConfig;
+                type Signal = __MyFormDataSignal;
+
+                fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => __MyFormDataSignal {
+                            ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(&config.ayo, Some(initial.ayo)),
+                        },
+                        None => __MyFormDataSignal {
+                            ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(&config.ayo, None),
+                        },
+                    }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
+                }
+                fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.ayo, &config.ayo, Some(initial.ayo)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.ayo, &config.ayo, None),
+                            }
+                        }
+                     }
+                }
+                fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
+                    Ok(MyFormData {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.ayo, &config.ayo)?,
+                    })
+                }
+                fn recurse(signal: &Self::Signal) {
+                    <u8 as ::leptos_form::FormField<
+                        <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.ayo);
+                }
+                fn reset_initial_value(signal: &Self::Signal) {
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.ayo);
+                }
+            }
+
+            impl #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
+                #[allow(unused_imports)]
+                fn render(props: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
+                    use #leptos_form_krate::FormField;
+                    use #leptos_krate::{IntoAttribute, IntoView};
+
+                    let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("ayo"));
+                    let _ayo_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "ayo");
+                    let _ayo_props = #leptos_form_krate::RenderProps::builder()
+                        .id(_ayo_id.clone())
+                        .name(_ayo_name.clone())
+                        .field_changed_class(props.field_changed_class.clone())
+                        .signal(props.signal.ayo.clone())
+                        .config(<u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
+                        .build();
+
+                    let _ayo_error = move || <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_ayo_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        }
+                    );
+                    let ty = <::std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let _ayo_view = #leptos_krate::view! { <FormField props=_ayo_props ty=ty /> };
+                    let _i18n = crate::i18n::use_i18n();
+                    #leptos_krate::view! {
+                        <label for={_ayo_id}>
+                            <div> { crate::i18n::t!(_i18n, ayo) } </div>
+                            {_ayo_view}
+                            {_ayo_error}
+                        </label>
+                    }
+                }
+            }
+
+            pub use leptos_form_component_my_form_data::*;
+
+            mod leptos_form_component_my_form_data {
+                use super::*;
+                use #leptos_krate::IntoView;
+                use ::leptos_form::internal::wasm_bindgen::{
+                    closure::Closure, JsCast, UnwrapThrowExt,
+                };
+
+                #[allow(unused_imports)]
+                #[#leptos_krate::component]
+                pub fn MyFormData(
+                    mut initial: MyFormData,
+                    #[prop(optional, into)]
+                    top: Option<::leptos_form::components::LeptosFormChildren>,
+                    #[prop(optional, into)]
+                    bottom: Option<::leptos_form::components::LeptosFormChildren>,
+                ) -> impl IntoView {
+                    use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
+                    use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
+                    use ::leptos_form::internal::wasm_bindgen::UnwrapThrowExt;
+                    use #leptos_router_krate::Form;
+                    use ::std::rc::Rc;
+
+                    let config = __MyFormDataConfig {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    };
+
+                    let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
+                        .id(None)
+                        .name(::leptos_form::internal::leptos::Oco::Borrowed(""))
+                        .signal(initial.clone().into_signal(&config, Some(initial.clone())))
+                        .config(config.clone())
+                        .build()
+                    );
+                    let _had_reset_called = ::leptos_form::internal::leptos::create_rw_signal(false);
+                    let parse_error_handler = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
+                    let ty = <::std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
+                    #leptos_krate::view! {
+                        <Form action="/api/my-form-data">
+                            {top.map(|x| (x.0)())}
+                            {move || #leptos_krate::view! { <FormField props=signal.get() ty=ty /> }}
+                            {bottom.map(|x| (x.0)())}
+                        </Form>
                     }
                 }
             }
