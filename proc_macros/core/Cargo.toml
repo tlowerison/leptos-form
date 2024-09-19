@@ -22,3 +22,6 @@ syn.workspace = true
 [dev-dependencies]
 prettyplease.workspace = true
 pretty_assertions.workspace = true
+
+[features]
+i18n = []

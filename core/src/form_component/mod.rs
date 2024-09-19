@@ -205,7 +205,7 @@ impl<T: Clone + Default + 'static> Default for FormFieldSignal<T> {
 }
 
 impl<T: 'static> FormFieldSignal<T> {
-    fn new(value: T, initial: Option<T>) -> Self {
+    pub fn new(value: T, initial: Option<T>) -> Self {
         Self {
             value: create_rw_signal(value),
             error: create_rw_signal(Default::default()),
@@ -215,7 +215,7 @@ impl<T: 'static> FormFieldSignal<T> {
 }
 
 impl<T: Default + 'static> FormFieldSignal<T> {
-    fn new_with_default_value(initial: Option<T>) -> Self {
+    pub fn new_with_default_value(initial: Option<T>) -> Self {
         Self {
             value: create_rw_signal(Default::default()),
             error: create_rw_signal(Default::default()),

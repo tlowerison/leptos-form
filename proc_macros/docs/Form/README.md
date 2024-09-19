@@ -21,7 +21,7 @@ See an [extended example](#example) below.
 | id          | `id` property set on the wrapping \<Form\> element. Note that this id will prefixed by other ids if this type is used as a field in another form | string                                     | Y        |
 | label       | Default label configuration used for all fields                                                                                                  | [label](#label-attributes)                 | Y        |
 | wrapper     | Can only be used when derived on a newtype -- required to correctly produce the `name` attribute on fields                                       | none                                       | Y        |
-
+| i18n     | can be used to set i18n settings                                       | [i18n-struct-options](#i18n-struct-options)                                       | Y        |
 
 # Field attributes
 
@@ -74,7 +74,7 @@ If specified, an action will be attached to the rendered [`Form`](leptos_router:
 An action can be specified one of two ways:
 - a string literal, representing the url the form should be submitted to; in this case, quality of life attributes like `component.map_submit`, `component.on_error`, `component.on_success`, and `component.reset_on_success` cannot be used because the page will immediately reload upon form submission
 - a path to a server function specified in a particular way:
-    ```rust
+    ```rust,ignore
     mod my_mod {
         use leptos::{server, ServerFnError};
         use leptos_form::Form;
@@ -162,6 +162,7 @@ Rendered adjacent labels have the following html structure:
 | rename_all | Rename all labels to a particular case             | string, see [`LabelCase`]          | Y (only allowed at struct-level)    |
 | style      | `style` property set on the wrapping html element  | string                             | Y                                   |
 | value      | A literal string to override the label value       | string                             | Y (only allowed at field-level)     |
+| i18n       | Set translation key or skip the translation        | [i18n-field-options](#i18n-field-options) | Y                            |
 
 ## Wrapped label attributes
 Configuration for a wrapped label.
@@ -181,6 +182,45 @@ Rendered wrapped labels have the following html structure:
 | style      | `style` property set on the wrapping html element  | string                    | Y                                   |
 | value      | A literal string to override the label value       | string                    | Y (only allowed at field-level)     |
 
+## I18n struct options
+Configure the Leptos-I18n Usage
+
+Example where the project uses an crate named `locales`:
+```rust,ignore
+#[derive(Form, Clone)]
+#[form(
+    i18n(path=locales::i18n)
+)]
+pub struct AddressTestForm {
+    #[form(label(adjacent(i18n(skip))))]
+    pub id: Ulid,
+    #[form(label(adjacent(i18n(skip))))]
+    pub city: String,
+}
+```
+
+| Attribute  | Description                                                                                        | Type  | Optional |
+| -----------|----------------------------------------------------------------------------------------------------|-------|----------|
+| path       | `path` tells where from the by the macro `leptos_i18n::load_locales!()` generated `i18n` mod lives | ident | Y        |
+
+## I18n field options
+Change the translation key to not using the fieldname as key or skip translation
+
+```rust,ignore
+#[derive(Form, Clone)]
+pub struct AddressTestForm {
+    #[form(label(adjacent(i18n(skip))))]
+    pub id: Ulid,
+    #[form(label(adjacent(i18n(key = address.city))))]
+    pub city: String,
+}
+```
+
+| Attribute  | Description                                                        | Type  | Optional |
+| -----------|--------------------------------------------------------------------|-------|----------|
+| key        | set the key instead of the fieldname to search for the translation | ident | Y        |
+| skip       | skip the i18n translation                                          | bool  | Y        |
+
 
 # Example
 This example derives two forms: one for creating blog posts and another for updating them.
@@ -188,7 +228,7 @@ Note that this example assumes makes use of Tailwind classes.
 
 See additional [examples](https://github.com/tlowerison/leptos_form/tree/main/examples).
 
-```rust
+```rust,ignore
 mod blog_post {
     use ::leptos::*;
     use ::leptos::html::Textarea;
@@ -196,14 +236,14 @@ mod blog_post {
     use ::leptos_router::*;
     use ::serde::*;
     use ::typed_builder::*;
-    use ::uuid::Uuid;
+    use ::ulid::Ulid;
 
     /// db model of a blog post -- this type is here just to facilitate
     /// the use of server functions and is not particularly relevant to
     /// this example
     #[derive(Clone, Debug, Deserialize, Serialize, TypedBuilder)]
     pub struct DbBlogPost {
-        pub id: Uuid,
+        pub id: Ulid,
         pub slug: String,
         pub title: String,
         pub summary: String,
@@ -232,7 +272,7 @@ mod blog_post {
     )]
     pub struct BlogPost {
         #[form(class = "hidden", label = "none")]
-        pub id: Uuid,
+        pub id: Ulid,
         #[form(group = 0)]
         pub slug: String,
         #[builder(default)]
@@ -256,7 +296,7 @@ mod blog_post {
 
     #[component]
     pub fn BlogPostCreate() -> impl IntoView {
-        let id = Uuid::new_v4();
+        let id = Ulid::new();
         let initial = BlogPost::builder().id(id).slug(id.to_string()).build();
 
         view! {
@@ -305,7 +345,7 @@ mod blog_post {
     #[builder(field_defaults(default))]
     pub struct BlogPostPatch {
         #[builder(!default)]
-        pub id: Uuid,
+        pub id: Ulid,
         pub slug: Option<String>,
         pub title: Option<String>,
         pub summary: Option<String>,
