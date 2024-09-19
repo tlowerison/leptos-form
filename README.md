@@ -51,10 +51,12 @@ This crate offers the following features, all of which are not activated by defa
 - `chrono`: Provides impls for [`DateTime`](https://docs.rs/chrono/latest/chrono/struct.DateTime.html), [`NaiveDate`](https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html), [`NaiveDateTime`](https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDateTime.html)
 - `num-bigint`: Provides impls for [`BigInt`](https://docs.rs/num-bigint/latest/num_bigint/struct.BigInt.html) and [`BigUint`](https://docs.rs/num-bigint/latest/num_bigint/struct.BigUint.html)
 - `uuid`: Provides impls for [`Uuid`](https://docs.rs/uuid/latest/uuid/struct.Uuid.html)
+- `ulid`: Provides impls for [`Ulid`](https://docs.rs/ulid/latest/ulid/struct.Ulid.html)
+- `i18n`: Provides the ability to use [`leptos-i18n`](https://docs.rs/leptos_i18n/latest/leptos_i18n/)
 
 ## Example
 
-```rust
+```rust,ignore
 mod my_crate {
     use leptos::*;
     use leptos_form::prelude::*;
